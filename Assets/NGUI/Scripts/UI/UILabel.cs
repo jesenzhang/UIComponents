@@ -7,6 +7,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System;
 using Alignment = NGUIText.Alignment;
+using EmojiAlignment = NGUIText.EmojiAlignment;
 
 [ExecuteInEditMode]
 [AddComponentMenu("NGUI/UI/NGUI Label")]
@@ -1393,6 +1394,28 @@ public class UILabel : UIWidget
 			return;
 		}
 
+		// Check if there is any emoji in the text
+		if (full && useEmojis && emojiProvider !=null && emojiProvider.HasEmojis(mText)) {
+            hasEmojis = true;
+			if (emojiTexture == null)
+            	AddEmojiTexture();
+			else {
+                mEmojiTexture.pivot = pivot;
+                mEmojiTexture.mainTexture = emojiProvider.mainTexture;
+				mEmojiTexture.fillGeometry = false;
+                mEmojiTexture.MarkAsChanged();
+				mEmojiTexture.enabled = true;
+            }
+
+            PrintEmojis(mEmojiTexture.geometry);
+        } else if (full) {
+            hasEmojis = false;
+			if (emojiTexture != null) {
+                // GameObject.DestroyImmediate(emojiTexture.gameObject);
+                mEmojiTexture.enabled = false;
+            }
+        }
+
 		bool isDynamic = (trueTypeFont != null);
 
 		if (isDynamic && keepCrisp)
@@ -2160,6 +2183,12 @@ public class UILabel : UIWidget
 		NGUIText.spacingX = effectiveSpacingX;
 		NGUIText.spacingY = effectiveSpacingY;
 		NGUIText.fontScale = isDynamic ? mScale : ((float)mFontSize / mFont.defaultSize) * mScale;
+   		
+		NGUIText.hasEmojis = hasEmojis;
+		if (hasEmojis) {
+        	NGUIText.emojiProvider = emojiProvider;
+            NGUIText.emojiAlignment = emojiAlignment;
+        }
 
 		if (mFont != null)
 		{
@@ -2224,4 +2253,146 @@ public class UILabel : UIWidget
 	{
 		if (!paused && mTrueTypeFont != null) Invalidate(false);
 	}
+
+	//--------------------------------Emoji Related--------------------------------------------------------
+	//-----------------------------------------------------------------------------------------------------
+	
+	#region Emoji Related
+
+	[HideInInspector][SerializeField] EmojiAlignment mEmojiAlignment = EmojiAlignment.Top;
+	public EmojiAlignment emojiAlignment
+	{
+		get
+		{
+			return mEmojiAlignment;
+		}
+		set
+		{
+			if (mEmojiAlignment != value)
+			{
+				mEmojiAlignment = value;
+				shouldBeProcessed = true;
+				ProcessAndRequest();
+			}
+		}
+	}
+
+	[HideInInspector][SerializeField]bool mUseEmojis = false;
+	public bool useEmojis {
+		get {
+            return mUseEmojis;
+        }
+		set {
+            mUseEmojis = value;
+            MarkAsChanged();
+        }
+	}
+
+	[HideInInspector][SerializeField]bool mHasEmojis = false;
+	public bool hasEmojis {
+		get {
+            return mHasEmojis;
+        }
+		private set {
+            mHasEmojis = value;
+        }
+	}
+
+    EmojiProvider mEmojiProvider;
+	public EmojiProvider emojiProvider {
+		get {
+			if (!useEmojis)
+                return null;
+			
+			if (mEmojiProvider == null)	return DefaultEmojiProvider.instance;
+            return mEmojiProvider;
+		}
+		set {
+			if (!useEmojis)
+				return;
+			mEmojiProvider = value;
+            MarkAsChanged();
+        }
+	}
+
+    UITexture mEmojiTexture;
+	public UITexture emojiTexture {
+        get
+        {
+            if (mEmojiTexture == null)
+            {
+                var tran = transform.Find("Emoji Texture");
+				if (tran != null)
+                    mEmojiTexture = tran.GetComponent<UITexture>();
+            }
+            return mEmojiTexture;
+        }
+    }
+
+    void AddEmojiTexture () {
+		if (mEmojiTexture == null) {
+	        mEmojiTexture = NGUITools.AddWidget<UITexture>(cachedGameObject);
+            mEmojiTexture.name = "Emoji Texture";
+            mEmojiTexture.mainTexture = emojiProvider.mainTexture;
+			mEmojiTexture.fillGeometry = false;
+            mEmojiTexture.pivot = pivot;
+            mEmojiTexture.SetAnchor(cachedTransform);
+        }
+    }
+
+	void PrintEmojis (UIGeometry emoji) {
+		if (emoji != null) emoji.Clear();
+		if (!isValid) return;
+
+		string text = processedText;
+		UpdateNGUIText();
+
+		int startingCaretVerts = emoji.verts.Count;
+		float alpha = finalAlpha;
+
+        NGUIText.PrintEmojis(mText, emoji.verts, emoji.uvs, emoji.cols);
+
+        ApplyOffset(emoji.verts, startingCaretVerts);
+    }
+    #endregion
+
+    //--------------------------------Emoji Related End----------------------------------------------------
+    //-----------------------------------------------------------------------------------------------------
+
 }
+
+
+
+public abstract class EmojiProvider {
+	public delegate bool EmojiFilter(string text, BMSymbol symbol);
+    public EmojiFilter emojiFilter;
+
+
+	public virtual Texture mainTexture {
+		get {
+            throw new System.NotImplementedException();
+        }
+	}
+
+    public abstract bool HasEmojis(string text);
+
+    public BMSymbol MatchEmoji(string text, int offset = 0)
+    {
+		if (string.IsNullOrEmpty(text))
+            return null;
+
+        return MatchEmoji(text, offset, text.Length - offset);
+    }
+	
+    public abstract BMSymbol MatchEmoji(string text, int offset, int length);
+
+    public abstract List<EmojiVO> GetAllEmojis ();
+}
+
+public class EmojiVO {
+    public BMSymbol symbol;
+	public EmojiVO (BMSymbol symbol) {
+        this.symbol = symbol;
+    }
+}
+

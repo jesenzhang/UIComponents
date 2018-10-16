@@ -464,8 +464,12 @@ public class UIAtlas : MonoBehaviour
 #endif
 			}
 		}
+		if (EventDelegate.IsValid(onChange))
+		{
+			EventDelegate.Execute(onChange);
+		}
 	}
-
+  	public List<EventDelegate> onChange = new List<EventDelegate>();
 	/// <summary>
 	/// Performs an upgrade from the legacy way of specifying data to the new one.
 	/// </summary>

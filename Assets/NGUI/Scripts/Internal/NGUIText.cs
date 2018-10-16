@@ -28,6 +28,14 @@ static public class NGUIText
 		Justified,
 	}
 
+	
+	public enum EmojiAlignment
+	{
+		Top,
+		Center,
+		Bottom,
+	}
+
 	[DoNotObfuscateNGUI] public enum SymbolStyle
 	{
 		None,
@@ -64,6 +72,7 @@ static public class NGUIText
 	static public float pixelDensity = 1f;
 	static public FontStyle fontStyle = FontStyle.Normal;
 	static public Alignment alignment = Alignment.Left;
+	static public EmojiAlignment emojiAlignment = EmojiAlignment.Top;
 	static public Color tint = Color.white;
 
 	static public int rectWidth = 1000000;
@@ -87,7 +96,8 @@ static public class NGUIText
 	static public float finalLineHeight = 0f;
 	static public float baseline = 0f;
 	static public bool useSymbols = false;
-
+	static public bool hasEmojis = false;
+	static public EmojiProvider emojiProvider = null;
 	/// <summary>
 	/// Recalculate the 'final' values.
 	/// </summary>
@@ -103,7 +113,7 @@ static public class NGUIText
 		finalSize = Mathf.RoundToInt(fontSize / pixelDensity);
 		finalSpacingX = spacingX * fontScale;
 		finalLineHeight = (fontSize + spacingY) * fontScale;
-		useSymbols = (dynamicFont != null || bitmapFont != null) && encoding && symbolStyle != SymbolStyle.None;
+		useSymbols = hasEmojis || (dynamicFont != null || bitmapFont != null) && encoding && symbolStyle != SymbolStyle.None;
 
 #if DYNAMIC_FONT
 		Font font = dynamicFont;
@@ -167,7 +177,12 @@ static public class NGUIText
 
 	static public BMSymbol GetSymbol (string text, int index, int textLength)
 	{
-		return (bitmapFont != null) ? bitmapFont.MatchSymbol(text, index, textLength) : null;
+		if (hasEmojis) {
+            return (emojiProvider != null) ? emojiProvider.MatchEmoji(text, index) : null;
+        } else if (useSymbols) {
+			return (bitmapFont != null) ? bitmapFont.MatchSymbol(text, index, textLength) : null;
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -329,7 +344,7 @@ static public class NGUIText
 	}
 
 	static Color mInvisible = new Color(0f, 0f, 0f, 0f);
-	static BetterList<Color> mColors = new BetterList<Color>();
+	static List<Color> mColors = new List<Color>();
 	static float mAlpha = 1f;
 #if DYNAMIC_FONT
 	static CharacterInfo mTempChar;
@@ -469,7 +484,7 @@ static public class NGUIText
 	/// Advanced symbol support originally contributed by Rudy Pangestu.
 	/// </summary>
 
-	static public bool ParseSymbol (string text, ref int index, BetterList<Color> colors, bool premultiply,
+	static public bool ParseSymbol (string text, ref int index, List<Color> colors, bool premultiply,
 		ref int sub, ref bool bold, ref bool italic, ref bool underline, ref bool strike, ref bool ignoreColor)
 	{
 		int length = text.Length;
@@ -480,8 +495,8 @@ static public class NGUIText
 		{
 			if (text[index + 1] == '-')
 			{
-				if (colors != null && colors.size > 1)
-					colors.RemoveAt(colors.size - 1);
+				if (colors != null && colors.Count > 1)
+					colors.RemoveAt(colors.Count - 1);
 				index += 3;
 				return true;
 			}
@@ -651,9 +666,9 @@ static public class NGUIText
 			if (EncodeColor24(c) != text.Substring(index + 1, 6).ToUpper())
 				return false;
 
-			if (colors != null && colors.size > 0)
+			if (colors != null && colors.Count > 0)
 			{
-				c.a = colors[colors.size - 1].a;
+				c.a = colors[colors.Count - 1].a;
 				if (premultiply && c.a != 1f)
 					c = Color.Lerp(mInvisible, c, c.a);
 				colors.Add(c);
@@ -936,6 +951,7 @@ static public class NGUIText
 			bool underline = false;
 			bool strikethrough = false;
 			bool ignoreColor = false;
+			float currentLineHeight = finalLineHeight;
 
 			for (int i = 0; i < textLength; ++i)
 			{
@@ -946,7 +962,8 @@ static public class NGUIText
 				{
 					if (x > maxX) maxX = x;
 					x = 0;
-					y += finalLineHeight;
+					y += currentLineHeight;
+					currentLineHeight = finalLineHeight;
 					prev = 0;
 					continue;
 				}
@@ -982,13 +999,18 @@ static public class NGUIText
 						if (x > maxX) maxX = x;
 
 						x = 0;
-						y += finalLineHeight;
+						y += currentLineHeight;
+						currentLineHeight = finalLineHeight;
 					}
 					else if (mx > maxX) maxX = mx;
 
 					x += w + finalSpacingX;
 					i += symbol.length - 1;
 					prev = 0;
+					if (hasEmojis && symbol.height > currentLineHeight)
+					{
+						currentLineHeight = symbol.height + symbol.offsetY;
+					}
 				}
 				else // No symbol present
 				{
@@ -1023,7 +1045,8 @@ static public class NGUIText
 						if (x == 0f) continue;
 
 						x = 0;
-						y += finalLineHeight;
+						y += currentLineHeight;
+						currentLineHeight = finalLineHeight;
 					}
 					else if (mx > maxX) maxX = mx;
 
@@ -1051,12 +1074,12 @@ static public class NGUIText
 			}
 
 			v.x = Mathf.Ceil(((x > maxX) ? x - finalSpacingX : maxX));
-			v.y = Mathf.Ceil((y + finalLineHeight));
+			v.y = Mathf.Ceil((y + currentLineHeight));
 		}
 		return v;
 	}
 
-	static BetterList<float> mSizes = new BetterList<float>();
+	static List<float> mSizes = new List<float>();
 
 	/// <summary>
 	/// Calculate the character index offset required to print the end of the specified text.
@@ -1107,7 +1130,7 @@ static public class NGUIText
 		}
 
 		float remainingWidth = regionWidth;
-		int currentCharacterIndex = mSizes.size;
+		int currentCharacterIndex = mSizes.Count;
 
 		while (currentCharacterIndex > 0 && remainingWidth > 0)
 			remainingWidth -= mSizes[--currentCharacterIndex];
@@ -1214,10 +1237,10 @@ static public class NGUIText
 
 				if (wrapLineColors)
 				{
-					for (int i = 0; i < mColors.size; ++i)
+					for (int i = 0; i < mColors.Count; ++i)
 						sb.Insert(sb.Length - 1, "[-]");
 
-					for (int i = 0; i < mColors.size; ++i)
+					for (int i = 0; i < mColors.Count; ++i)
 					{
 						sb.Append("[");
 						sb.Append(NGUIText.EncodeColor(mColors[i]));
@@ -1261,16 +1284,16 @@ static public class NGUIText
 				{
 					if (ignoreColor)
 					{
-						c = mColors[mColors.size - 1];
+						c = mColors[mColors.Count - 1];
 						c.a *= mAlpha * tint.a;
 					}
 					else
 					{
-						c = tint * mColors[mColors.size - 1];
+						c = tint * mColors[mColors.Count - 1];
 						c.a *= mAlpha;
 					}
 
-					for (int b = 0, bmax = mColors.size - 2; b < bmax; ++b)
+					for (int b = 0, bmax = mColors.Count - 2; b < bmax; ++b)
 						c.a *= mColors[b].a;
 				}
 
@@ -1357,7 +1380,7 @@ static public class NGUIText
 					sb.Append(text.Substring(start, Mathf.Max(0, offset - start)));
 					if (!space && !eastern) fits = false;
 
-					if (wrapLineColors && mColors.size > 0) sb.Append("[-]");
+					if (wrapLineColors && mColors.Count > 0) sb.Append("[-]");
 
 					if (lineCount++ == maxLineCount)
 					{
@@ -1370,10 +1393,10 @@ static public class NGUIText
 
 					if (wrapLineColors)
 					{
-						for (int i = 0; i < mColors.size; ++i)
+						for (int i = 0; i < mColors.Count; ++i)
 							sb.Insert(sb.Length - 1, "[-]");
 
-						for (int i = 0; i < mColors.size; ++i)
+						for (int i = 0; i < mColors.Count; ++i)
 						{
 							sb.Append("[");
 							sb.Append(NGUIText.EncodeColor(mColors[i]));
@@ -1417,11 +1440,11 @@ static public class NGUIText
 					if (wrapLineColors)
 					{
 						// Negate previous colors prior to the newline character
-						for (int i = 0; i < mColors.size; ++i)
+						for (int i = 0; i < mColors.Count; ++i)
 							sb.Insert(sb.Length - 1, "[-]");
 
 						// Add all the current colors before going forward
-						for (int i = 0; i < mColors.size; ++i)
+						for (int i = 0; i < mColors.Count; ++i)
 						{
 							sb.Append("[");
 							sb.Append(NGUIText.EncodeColor(mColors[i]));
@@ -1441,7 +1464,7 @@ static public class NGUIText
 		}
 
 		if (start < offset) sb.Append(text.Substring(start, offset - start));
-		if (wrapLineColors && mColors.size > 0) sb.Append("[-]");
+		if (wrapLineColors && mColors.Count > 0) sb.Append("[-]");
 		finalText = sb.ToString();
 		mColors.Clear();
 		return fits && ((offset == textLength) || (lineCount <= Mathf.Min(maxLines, maxLineCount)));
@@ -1486,6 +1509,8 @@ static public class NGUIText
 		bool underline = false;
 		bool strikethrough = false;
 		bool ignoreColor = false;
+ 		int currentLineStartIndex = 0;
+		float currentLineHeight = finalLineHeight;
 
 		if (bitmapFont != null)
 		{
@@ -1510,9 +1535,16 @@ static public class NGUIText
 					Align(verts, indexOffset, x - finalSpacingX);
 					indexOffset = verts.Count;
 				}
-
+				// Align to bottom
+				if (hasEmojis && finalLineHeight != currentLineHeight)
+				{
+					EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+				}
+				currentLineStartIndex = verts.Count;
 				x = 0;
-				y += finalLineHeight;
+				x = 0;
+				y += currentLineHeight;
+				currentLineHeight = finalLineHeight;
 				prev = 0;
 				continue;
 			}
@@ -1530,16 +1562,16 @@ static public class NGUIText
 			{
 				if (ignoreColor)
 				{
-					gc = mColors[mColors.size - 1];
+					gc = mColors[mColors.Count - 1];
 					gc.a *= mAlpha * tint.a;
 				}
 				else
 				{
-					gc = tint * mColors[mColors.size - 1];
+					gc = tint * mColors[mColors.Count - 1];
 					gc.a *= mAlpha;
 				}
 
-				for (int b = 0, bmax = mColors.size - 2; b < bmax; ++b)
+				for (int b = 0, bmax = mColors.Count - 2; b < bmax; ++b)
 					gc.a *= mColors[b].a;
 
 				if (gradient)
@@ -1573,6 +1605,12 @@ static public class NGUIText
 						Align(verts, indexOffset, x - finalSpacingX);
 						indexOffset = verts.Count;
 					}
+					// Align to bottom
+					if (hasEmojis && finalLineHeight != currentLineHeight)
+					{
+						EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+					}
+					currentLineStartIndex = verts.Count;
 
 					v0x -= x;
 					v1x -= x;
@@ -1580,20 +1618,27 @@ static public class NGUIText
 					v1y -= finalLineHeight;
 
 					x = 0;
-					y += finalLineHeight;
+					y += currentLineHeight;
+					currentLineHeight = finalLineHeight;
 					prevX = 0;
 				}
+				// Update the line height
+				if (hasEmojis && symbol.height + symbol.offsetY > currentLineHeight)
+					currentLineHeight = symbol.height + symbol.offsetY;
 
-				verts.Add(new Vector3(v0x, v0y));
-				verts.Add(new Vector3(v0x, v1y));
-				verts.Add(new Vector3(v1x, v1y));
-				verts.Add(new Vector3(v1x, v0y));
+ 				if (!hasEmojis)
+                {
+                    verts.Add(new Vector3(v0x, v0y));
+                    verts.Add(new Vector3(v0x, v1y));
+                    verts.Add(new Vector3(v1x, v1y));
+                    verts.Add(new Vector3(v1x, v0y));
+                }
 
 				x += w + finalSpacingX;
 				i += symbol.length - 1;
 				prev = 0;
 
-				if (uvs != null)
+				if (uvs != null && !hasEmojis)
 				{
 					Rect uv = symbol.uvRect;
 
@@ -1608,7 +1653,7 @@ static public class NGUIText
 					uvs.Add(new Vector2(u1x, u0y));
 				}
 
-				if (cols != null)
+				if (cols != null && !hasEmojis)
 				{
 					if (symbolStyle == SymbolStyle.Colored)
 					{
@@ -1669,14 +1714,21 @@ static public class NGUIText
 						Align(verts, indexOffset, x - finalSpacingX);
 						indexOffset = verts.Count;
 					}
+					// Align to bottom
+					if (hasEmojis && finalLineHeight != currentLineHeight)
+					{
+						EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+					}
+					currentLineStartIndex = verts.Count;
 
 					v0x -= x;
 					v1x -= x;
-					v0y -= finalLineHeight;
-					v1y -= finalLineHeight;
+					v0y -= currentLineHeight;
+					v1y -= currentLineHeight;
 
 					x = 0;
-					y += finalLineHeight;
+					y += currentLineHeight;
+					currentLineHeight = finalLineHeight;
 					prevX = 0;
 				}
 
@@ -1902,6 +1954,11 @@ static public class NGUIText
 			Align(verts, indexOffset, x - finalSpacingX);
 			indexOffset = verts.Count;
 		}
+		// Align to bottom
+		if (hasEmojis && finalLineHeight != currentLineHeight)
+		{
+			EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+		}
 		mColors.Clear();
 	}
 
@@ -1931,6 +1988,8 @@ static public class NGUIText
 		bool strikethrough = false;
 		bool ignoreColor = false;
 
+		float currentLineHeight = finalLineHeight;
+
 		for (int i = 0; i < textLength; ++i)
 		{
 			ch = text[i];
@@ -1950,7 +2009,8 @@ static public class NGUIText
 				}
 
 				x = 0;
-				y += finalLineHeight;
+				y += currentLineHeight;
+				currentLineHeight = finalLineHeight;
 				prev = 0;
 				continue;
 			}
@@ -1989,7 +2049,8 @@ static public class NGUIText
 						}
 
 						x = w;
-						y += finalLineHeight;
+						y += currentLineHeight;
+						currentLineHeight = finalLineHeight;
 					}
 					else x += w;
 
@@ -2013,9 +2074,14 @@ static public class NGUIText
 					}
 
 					x = w;
-					y += finalLineHeight;
+					y += currentLineHeight;
+					currentLineHeight = finalLineHeight;
 				}
 				else x += w;
+
+				// Update the line height
+				if (hasEmojis && symbol.height > currentLineHeight)
+					currentLineHeight = symbol.height + symbol.offsetY;
 
 				verts.Add(new Vector3(x, -y - halfSize));
 				indices.Add(i + 1);
@@ -2050,6 +2116,8 @@ static public class NGUIText
 		bool strikethrough = false;
 		bool ignoreColor = false;
 
+		float currentLineHeight = finalLineHeight;
+
 		for (int i = 0; i < textLength; ++i)
 		{
 			ch = text[i];
@@ -2064,7 +2132,8 @@ static public class NGUIText
 				}
 
 				x = 0;
-				y += finalLineHeight;
+				y += currentLineHeight;
+				currentLineHeight = finalLineHeight;
 				prev = 0;
 				continue;
 			}
@@ -2103,7 +2172,8 @@ static public class NGUIText
 						}
 
 						x = 0f;
-						y += finalLineHeight;
+						y += currentLineHeight;
+						currentLineHeight = finalLineHeight;
 						prev = 0;
 						--i;
 						continue;
@@ -2136,6 +2206,10 @@ static public class NGUIText
 					--i;
 					continue;
 				}
+
+				// Update the line height
+				if (hasEmojis && symbol.height > currentLineHeight)
+					currentLineHeight = symbol.height + symbol.offsetY;
 
 				indices.Add(i);
 				verts.Add(new Vector3(x, -y - fullSize));
@@ -2504,4 +2578,333 @@ static public class NGUIText
 			if (!ReplaceLink(ref text, ref index, "https://", prefix, suffix)) break;
 		}
 	}
+
+	
+	/// <summary>
+    /// Print the emojis. Note that it's expected that 'text' has been stripped clean of symbols.
+    /// </summary>
+    static public void PrintEmojis(string text, List<Vector3> verts, List<Vector2> uvs, List<Color> cols)
+    {
+		if (string.IsNullOrEmpty(text)) return;
+
+		int indexOffsetEmoji = 0;
+		Prepare(text);
+
+		// Start with the white tint
+		mColors.Add(Color.white);
+		mAlpha = 1f;
+
+		int ch = 0, prev = 0;
+		float x = 0f, y = 0f, maxX = 0f;
+		float sizeF = finalSize;
+
+		Color32 uc = tint;
+		int textLength = text.Length;
+
+		// Advanced symbol support contributed by Rudy Pangestu.
+		bool subscript = false;
+		int subscriptMode = 0;  // 0 = normal, 1 = subscript, 2 = superscript
+		bool bold = false;
+		bool italic = false;
+		bool underline = false;
+		bool strikethrough = false;
+		bool ignoreColor = false;
+		const float sizeShrinkage = 0.75f;
+
+		float v0x;
+		float v1x;
+		float v1y;
+		float v0y;
+		float prevX = 0;
+
+		int currentLineStartIndex = 0;	// index in verts
+		float currentLineHeight = finalLineHeight;
+
+		for (int i = 0; i < textLength; ++i)
+		{
+			ch = text[i];
+
+			prevX = x;
+
+			// New line character -- skip to the next line
+			if (ch == '\n')
+			{
+				if (x > maxX) maxX = x;
+
+				if (alignment != Alignment.Left && indexOffsetEmoji < verts.Count)
+				{
+                    if (hasEmojis)
+                    {
+                        Align(verts, indexOffsetEmoji, x - finalSpacingX);
+                        indexOffsetEmoji = verts.Count;
+                    }
+                }
+
+				// Align to bottom
+                if (hasEmojis && finalLineHeight != currentLineHeight)
+                {
+                    EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+                }
+                currentLineStartIndex = verts.Count;
+
+				x = 0;
+				y += currentLineHeight;
+				currentLineHeight = finalLineHeight;
+				prev = 0;
+				continue;
+			}
+
+			// Invalid character -- skip it
+			if (ch < ' ')
+			{
+				prev = ch;
+				continue;
+			}
+			// Color changing symbol
+			if (encoding && ParseSymbol(text, ref i, mColors, premultiply, ref subscriptMode, ref bold, ref italic, ref underline, ref strikethrough, ref ignoreColor))
+			{
+				--i;
+				continue;
+			}
+
+			// See if there is a symbol matching this text
+			BMSymbol symbol = useSymbols ? GetSymbol(text, i, textLength) : null;
+			var scale = (subscriptMode == 0) ? fontScale : fontScale * sizeShrinkage;
+			if (symbol != null)
+			{
+				v0x = x + symbol.offsetX * fontScale;
+				v1x = v0x + symbol.width * fontScale;
+				v1y = -(y + symbol.offsetY * fontScale);
+				v0y = v1y - symbol.height * fontScale;
+
+				// Doesn't fit? Move down to the next line
+				if (Mathf.RoundToInt(x + symbol.advance * fontScale) > rectWidth)
+				{
+					if (x == 0f) return;
+
+					if (alignment != Alignment.Left && indexOffsetEmoji < verts.Count)
+					{
+                        if (hasEmojis)
+                        {
+                            Align(verts, indexOffsetEmoji, x - finalSpacingX);
+                            indexOffsetEmoji = verts.Count;
+                        }
+                    }
+
+					// Align to bottom
+					if (hasEmojis && finalLineHeight != currentLineHeight)
+					{
+						EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+					}
+					currentLineStartIndex = verts.Count;
+					
+					v0x -= x;
+					v1x -= x;
+					v0y -= currentLineHeight;
+					v1y -= currentLineHeight;
+
+					x = 0;
+					y += currentLineHeight;
+					currentLineHeight = finalLineHeight;
+					prevX = 0;
+				}
+
+				// Update the line height
+				if (hasEmojis && symbol.height + symbol.offsetY > currentLineHeight)
+					currentLineHeight = symbol.height + symbol.offsetY;
+					
+				if (hasEmojis) {
+                    // 与文字对齐
+                    switch (emojiAlignment)
+                    {
+                        case EmojiAlignment.Center:
+                            v0y += (symbol.offsetY * fontScale + symbol.height - finalLineHeight) / 2;
+                			v1y += (symbol.offsetY * fontScale + symbol.height - finalLineHeight) / 2;
+                            break;
+                        case EmojiAlignment.Bottom:
+                            v0y += symbol.offsetY * fontScale + symbol.height - finalLineHeight;
+                			v1y += symbol.offsetY * fontScale + symbol.height - finalLineHeight;
+                            break;
+                    }
+					verts.Add(new Vector3(v0x, v0y));
+					verts.Add(new Vector3(v0x, v1y));
+					verts.Add(new Vector3(v1x, v1y));
+					verts.Add(new Vector3(v1x, v0y));
+                }
+
+				x += finalSpacingX + symbol.advance * fontScale;
+				i += symbol.length - 1;
+				prev = 0;
+
+				if (uvs != null)
+				{
+					Rect uv = symbol.uvRect;
+
+					float u0x = uv.xMin;
+					float u0y = uv.yMin;
+					float u1x = uv.xMax;
+					float u1y = uv.yMax;
+					if (hasEmojis) {
+						uvs.Add(new Vector2(u0x, u0y));
+						uvs.Add(new Vector2(u0x, u1y));
+						uvs.Add(new Vector2(u1x, u1y));
+						uvs.Add(new Vector2(u1x, u0y));
+					}
+				}
+
+				if (cols != null)
+				{
+					Color32 col = Color.white;
+					col.a = uc.a;
+					for (int b = 0; b < 4; ++b) {
+						if (hasEmojis) {
+							cols.Add(uc);
+						}
+					}
+				}
+			}
+			else // No symbol present
+			{
+				GlyphInfo glyph = GetGlyph(ch, prev);
+				if (glyph == null) continue;
+				prev = ch;
+
+				if (subscriptMode != 0)
+				{
+					glyph.v0.x *= sizeShrinkage;
+					glyph.v0.y *= sizeShrinkage;
+					glyph.v1.x *= sizeShrinkage;
+					glyph.v1.y *= sizeShrinkage;
+
+					if (subscriptMode == 1)
+					{
+						glyph.v0.y -= fontScale * fontSize * 0.4f;
+						glyph.v1.y -= fontScale * fontSize * 0.4f;
+					}
+					else
+					{
+						glyph.v0.y += fontScale * fontSize * 0.05f;
+						glyph.v1.y += fontScale * fontSize * 0.05f;
+					}
+				}
+
+				float y0 = glyph.v0.y;
+				float y1 = glyph.v1.y;
+
+				v0x = glyph.v0.x + x;
+				v0y = glyph.v0.y - y;
+				v1x = glyph.v1.x + x;
+				v1y = glyph.v1.y - y;
+
+				float w = glyph.advance;
+				if (finalSpacingX < 0f) w += finalSpacingX;
+
+				// Doesn't fit? Move down to the next line
+				if (Mathf.RoundToInt(x + w) > rectWidth)
+				{
+					if (x == 0f) return;
+
+					if (alignment != Alignment.Left && indexOffsetEmoji < verts.Count)
+					{
+                        if (hasEmojis)
+                        {
+                            Align(verts, indexOffsetEmoji, x - finalSpacingX);
+                            indexOffsetEmoji = verts.Count;
+                        }
+                    }
+
+					// Align to bottom
+					if (hasEmojis && finalLineHeight != currentLineHeight)
+					{
+						EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+					}
+					currentLineStartIndex = verts.Count;
+
+					v0x -= x;
+					v1x -= x;
+					v0y -= currentLineHeight;
+					v1y -= currentLineHeight;
+
+					x = 0;
+					y += currentLineHeight;
+					currentLineHeight = finalLineHeight;
+					prevX = 0;
+				}
+
+				if (IsSpace(ch))
+				{
+					if (underline)
+					{
+						ch = '_';
+					}
+					else if (strikethrough)
+					{
+						ch = '-';
+					}
+				}
+
+				// Advance the position
+				x += (subscriptMode == 0) ? finalSpacingX + glyph.advance :
+					(finalSpacingX + glyph.advance) * sizeShrinkage;
+
+				// No need to continue if this is a space character
+				if (IsSpace(ch)) continue;
+
+				// Underline and strike-through contributed by Rudy Pangestu.
+				if (underline || strikethrough)
+				{
+					GlyphInfo dash = GetGlyph(strikethrough ? '-' : '_', prev);
+					if (dash == null) continue;
+
+					if (subscript && strikethrough)
+					{
+						v0y = (-y + dash.v0.y) * sizeShrinkage;
+						v1y = (-y + dash.v1.y) * sizeShrinkage;
+					}
+					else
+					{
+						v0y = (-y + dash.v0.y);
+						v1y = (-y + dash.v1.y);
+					}
+				}
+			}
+		}
+
+		if (alignment != Alignment.Left && indexOffsetEmoji < verts.Count)
+		{
+            if (hasEmojis)
+            {
+                Align(verts, indexOffsetEmoji, x - finalSpacingX);
+                indexOffsetEmoji = verts.Count;
+            }
+        }
+
+		// Align to bottom
+		if (hasEmojis && finalLineHeight != currentLineHeight)
+		{
+			EmojiAlign(verts, currentLineStartIndex, verts.Count, currentLineHeight);
+		}
+
+		mColors.Clear();
+    }
+
+	static void EmojiAlign (List<Vector3> verts, int start, int end, float maxLineHeight) {
+        float offset = 0;
+        switch (emojiAlignment) {
+			case EmojiAlignment.Top:
+                break;
+			case EmojiAlignment.Center:
+                offset = (maxLineHeight - finalLineHeight) / 2;
+                break;
+			case EmojiAlignment.Bottom:
+                offset = maxLineHeight - finalLineHeight;
+                break;
+        }
+
+        for (int i = start; i < end; i++) {
+			var t  =verts[i];
+			t.y -= offset;
+			verts[i] = t;
+        }
+    }
 }

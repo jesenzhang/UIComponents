@@ -342,6 +342,25 @@ public class UILabelInspector : UIWidgetInspector
 			NGUIEditorTools.SetLabelWidth(80f);
 			EditorGUI.EndDisabledGroup();
 			GUILayout.EndHorizontal();
+
+			//if (mFontType == FontType.Unity) 
+			{
+				// Use Emojis?
+				GUILayout.BeginHorizontal();
+				sp = NGUIEditorTools.DrawProperty("UseEmoji", serializedObject, "mUseEmojis", GUILayout.Width(100f));
+                if (sp.boolValue)
+                {
+					NGUIEditorTools.DrawPaddedProperty("Alignment", serializedObject, "mEmojiAlignment");
+				}
+				else {
+					var label = serializedObject.targetObject as UILabel;
+					var emojiTrans = label.transform.Find("Emoji Texture");
+					if (emojiTrans != null) {
+						GameObject.DestroyImmediate(emojiTrans.gameObject);
+					}
+				}
+				GUILayout.EndHorizontal();
+			}
 		}
 		EditorGUI.EndDisabledGroup();
 		return isValid;
