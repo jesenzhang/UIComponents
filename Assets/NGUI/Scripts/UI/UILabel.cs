@@ -1392,7 +1392,7 @@ public class UILabel : UIWidget
 		{
 			mProcessedText = "";
 			return;
-		}
+		} 
 
 		// Check if there is any emoji in the text
 		if (full && useEmojis && emojiProvider !=null && emojiProvider.HasEmojis(mText)) {

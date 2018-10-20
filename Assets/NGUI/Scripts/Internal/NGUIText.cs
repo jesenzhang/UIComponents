@@ -1007,9 +1007,9 @@ static public class NGUIText
 					x += w + finalSpacingX;
 					i += symbol.length - 1;
 					prev = 0;
-					if (hasEmojis && symbol.height > currentLineHeight)
+					if (hasEmojis && symbol.height *fontScale > currentLineHeight)
 					{
-						currentLineHeight = symbol.height + symbol.offsetY;
+						currentLineHeight = symbol.height *fontScale+ symbol.offsetY;
 					}
 				}
 				else // No symbol present
@@ -1623,8 +1623,8 @@ static public class NGUIText
 					prevX = 0;
 				}
 				// Update the line height
-				if (hasEmojis && symbol.height + symbol.offsetY > currentLineHeight)
-					currentLineHeight = symbol.height + symbol.offsetY;
+				if (hasEmojis && symbol.height*fontScale  + symbol.offsetY > currentLineHeight)
+					currentLineHeight = symbol.height*fontScale + symbol.offsetY;
 
  				if (!hasEmojis)
                 {
@@ -2080,8 +2080,8 @@ static public class NGUIText
 				else x += w;
 
 				// Update the line height
-				if (hasEmojis && symbol.height > currentLineHeight)
-					currentLineHeight = symbol.height + symbol.offsetY;
+				if (hasEmojis && symbol.height*fontScale > currentLineHeight)
+					currentLineHeight = symbol.height*fontScale + symbol.offsetY;
 
 				verts.Add(new Vector3(x, -y - halfSize));
 				indices.Add(i + 1);
@@ -2208,8 +2208,8 @@ static public class NGUIText
 				}
 
 				// Update the line height
-				if (hasEmojis && symbol.height > currentLineHeight)
-					currentLineHeight = symbol.height + symbol.offsetY;
+				if (hasEmojis && symbol.height*fontScale > currentLineHeight)
+					currentLineHeight = symbol.height*fontScale + symbol.offsetY;
 
 				indices.Add(i);
 				verts.Add(new Vector3(x, -y - fullSize));
@@ -2710,8 +2710,8 @@ static public class NGUIText
 				}
 
 				// Update the line height
-				if (hasEmojis && symbol.height + symbol.offsetY > currentLineHeight)
-					currentLineHeight = symbol.height + symbol.offsetY;
+				if (hasEmojis && symbol.height* fontScale + symbol.offsetY > currentLineHeight)
+					currentLineHeight = symbol.height* fontScale + symbol.offsetY;
 					
 				if (hasEmojis) {
                     // 与文字对齐
@@ -2844,8 +2844,8 @@ static public class NGUIText
 				}
 
 				// Advance the position
-				x += (subscriptMode == 0) ? finalSpacingX + glyph.advance :
-					(finalSpacingX + glyph.advance) * sizeShrinkage;
+				x += (subscriptMode == 0) ? finalSpacingX + glyph.advance*fontScale :
+					(finalSpacingX + glyph.advance*fontScale) * sizeShrinkage;
 
 				// No need to continue if this is a space character
 				if (IsSpace(ch)) continue;
